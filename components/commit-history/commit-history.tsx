@@ -99,13 +99,22 @@ const CommitHistory = async () => {
   );
 const githubToken = typeof clerkResponse.data?.[0]?.token === 'string' ? clerkResponse.data?.[0]?.token : '';
 const user = await client.users.getUser(userId);
+
+// Define type for external accounts
+type ExternalAccount = {
+  provider: string;
+  username?: string;
+  // ...other fields if needed
+};
+
 const githubUsername =
   typeof user?.publicMetadata?.github_username === 'string' && user?.publicMetadata?.github_username
     ? user.publicMetadata.github_username
     : typeof user?.username === 'string' && user?.username
     ? user.username
-    : typeof user?.externalAccounts?.find((acc: any) => acc.provider === 'github')?.username === 'string'
-    ? user.externalAccounts.find((acc: any) => acc.provider === 'github')?.username
+    : Array.isArray(user?.externalAccounts) &&
+      typeof (user.externalAccounts as ExternalAccount[]).find((acc) => acc.provider === 'github')?.username === 'string'
+    ? (user.externalAccounts as ExternalAccount[]).find((acc) => acc.provider === 'github')?.username
     : '';
 
   if (!githubToken || !githubUsername) {

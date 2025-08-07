@@ -111,7 +111,8 @@ async function getContributionData(
       return null;
     }
 
-    let allDays: ContributionDay[] = [];
+    // let allDays: ContributionDay[] = [];
+    const allDays: ContributionDay[] = [];
     calendar.weeks.forEach((week: { contributionDays: ContributionDay[] }) => {
       allDays.push(...week.contributionDays);
     });
