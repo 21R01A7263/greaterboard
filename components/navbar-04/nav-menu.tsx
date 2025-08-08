@@ -12,7 +12,10 @@ export const NavMenu = (props: NavigationMenuProps) => (
     <NavigationMenuList className="gap-6 space-x-0 scale-110 data-[orientation=vertical]:flex-col font-semibold data-[orientation=vertical]:items-start">
       <NavigationMenuItem>
         <NavigationMenuLink asChild>
-          <Link href="/">Profile</Link>
+          <Link href="/profile">Profile</Link>
+        </NavigationMenuLink>
+        <NavigationMenuLink asChild>
+          <Link href="/admin">Admin</Link>
         </NavigationMenuLink>
       </NavigationMenuItem>
     </NavigationMenuList>
