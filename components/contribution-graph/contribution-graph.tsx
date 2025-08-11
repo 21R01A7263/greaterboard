@@ -1,6 +1,8 @@
 // src/app/dashboard/contribution-graph.tsx
 export const revalidate = 7200;
 import { auth, clerkClient } from '@clerk/nextjs/server';
+import prisma from '@/lib/prisma';
+import { Contribution } from '@prisma/client';
 
 interface ContributionDay {
   contributionCount: number;
@@ -158,10 +160,17 @@ const ContributionGraph = async () => {
       </div>
     );
   }
-
+  const user = await prisma.user.findUnique({
+    where: { id: userId }, // Use clerkId instead of id
+  });
   const to = new Date();
-  const from = new Date();
-  from.setDate(to.getDate() - 60);
+  let from = new Date();
+  if (user?.contributionsLastTracked) {
+    from = user.contributionsLastTracked;
+  } else {
+    // If first time, fetch last 60 days for a good baseline
+    from.setDate(to.getDate() - 60);
+  }
 
   const toISO = to.toISOString();
   const fromISO = from.toISOString();
@@ -206,11 +215,31 @@ const ContributionGraph = async () => {
       );
     }
 
+    
     const contributionDays = await getContributionData(
       githubToken,
-      fromISO,
-      toISO
+      from.toISOString(),
+      to.toISOString()
     );
+
+    if (contributionDays) {
+      // 3. Save new contributions and update last tracked date
+      await prisma.$transaction([
+        prisma.contribution.createMany({
+          data: contributionDays.map(c => ({
+            userId: userId,
+            date: new Date(c.date),
+            count: c.contributionCount,
+          })),
+          skipDuplicates: true, // In case of overlapping dates
+        }),
+        prisma.user.update({
+          where: { id: userId },
+          data: { contributionsLastTracked: to },
+        }),
+      ]);
+    }
+  
 
     if (!contributionDays || contributionDays.length === 0) {
       return (
@@ -243,8 +272,13 @@ const ContributionGraph = async () => {
       );
     }
 
-    // Create a 10x6 grid of contribution days (60 total) - dates increment top to bottom
-    const grid: ContributionDay[][] = [];
+    const allContributions = await prisma.contribution.findMany({
+    where: { userId: userId },
+    orderBy: { date: 'asc' },
+  });
+
+  const recentContributions = allContributions.slice(-60);
+  const grid: ContributionDay[][] = [];
     for (let col = 0; col < 10; col++) {
       const column: ContributionDay[] = [];
       for (let row = 0; row < 6; row++) {
@@ -255,6 +289,19 @@ const ContributionGraph = async () => {
       }
       grid.push(column);
     }
+
+    // Create a 10x6 grid of contribution days (60 total) - dates increment top to bottom
+    // const grid: ContributionDay[][] = [];
+    // for (let col = 0; col < 10; col++) {
+    //   const column: ContributionDay[] = [];
+    //   for (let row = 0; row < 6; row++) {
+    //     const index = col * 6 + row;
+    //     if (index < contributionDays.length) {
+    //       column.push(contributionDays[index]);
+    //     }
+    //   }
+    //   grid.push(column);
+    // }
 
     // Calculate total contributions and streak info
     const totalContributions = contributionDays.reduce((sum, day) => sum + day.contributionCount, 0);
@@ -413,3 +460,96 @@ const ContributionGraph = async () => {
 };
 
 export default ContributionGraph;
+
+
+
+// const ContributionGraph = async () => {
+//   const { userId } = await auth();
+
+//   if (!userId) {
+//     return null;
+//   }
+  
+//   // 1. Get user and last tracked date from DB
+//   const user = await prisma.user.findUnique({
+//     where: { id: userId },
+//   });
+
+//   const to = new Date();
+//   let from = new Date();
+
+//   if (user?.contributionsLastTracked) {
+//     from = user.contributionsLastTracked;
+//   } else {
+//     // If first time, fetch last 60 days for a good baseline
+//     from.setDate(to.getDate() - 60);
+//   }
+
+//   // 2. Fetch new contributions if needed
+//   const client = await clerkClient.users.getUserOauthAccessToken(
+//     userId,
+//     'github'
+//   );
+//   const githubToken = client.data?.[0]?.token;
+
+//   if (githubToken) {
+//     const newContributions = await getContributionData(
+//       githubToken,
+//       from.toISOString(),
+//       to.toISOString()
+//     );
+
+//     if (newContributions) {
+//       // 3. Save new contributions and update last tracked date
+//       await prisma.$transaction([
+//         prisma.contribution.createMany({
+//           data: newContributions.map(c => ({
+//             userId: userId,
+//             date: new Date(c.date),
+//             count: c.contributionCount,
+//           })),
+//           skipDuplicates: true, // In case of overlapping dates
+//         }),
+//         prisma.user.update({
+//           where: { id: userId },
+//           data: { contributionsLastTracked: to },
+//         }),
+//       ]);
+//     }
+//   }
+
+//   // 4. Fetch all contributions from the database to render
+//   const allContributions = await prisma.contribution.findMany({
+//     where: { userId: userId },
+//     orderBy: { date: 'asc' },
+//   });
+
+//   // Create a 6x5 grid of the most recent 30 contribution days for display
+//   const recentContributions = allContributions.slice(-30);
+//   const grid: Contribution[][] = [];
+//   for (let i = 0; i < 6; i++) {
+//     grid.push(recentContributions.slice(i * 5, i * 5 + 5));
+//   }
+
+//   return (
+//     <div className='w-full max-w-4xl bg-white p-8 rounded-lg shadow-md mt-8'>
+//       <h2 className='text-2xl font-semibold text-gray-700 mb-6 border-b pb-4'>
+//         Last 30 Days of Contributions
+//       </h2>
+//       <div className='flex flex-col gap-1'>
+//         {grid.map((row, rowIndex) => (
+//           <div key={rowIndex} className='flex gap-1'>
+//             {row.map((day, dayIndex) => (
+//               <div
+//                 key={dayIndex}
+//                 className='w-4 h-4 m-0.5 rounded-sm hover:scale-110'
+//                 style={{ backgroundColor: day.color || '#ebedf0' }} // Use a default color
+//                 title={`${day.count} contributions on ${new Date(day.date).toLocaleDateString()}`}
+//               ></div>
+//             ))}
+//           </div>
+//         ))}
+//       </div>
+//     </div>
+//   );
+// };
